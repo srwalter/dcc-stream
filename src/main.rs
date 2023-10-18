@@ -23,10 +23,9 @@ struct Args {
     #[arg(short, long, default_value_t = 1)]
     /// Which access port to use
     ap_num: u32,
-    #[arg(long, default_value_t = false)]
-    /// Don't check TXfull before reading DCC.  This gives higher throughput, but you may get
-    /// duplicate values.
-    nocheck: bool,
+    #[arg(short, long, default_value_t = 16)]
+    /// Number of reads to queue per batch
+    queue_size: u32,
     #[arg(long, default_value_t = false)]
     /// Ignore duplicate values
     nodups: bool,
@@ -65,6 +64,8 @@ fn main() {
         str::parse(&args.debug_base).expect("failed to parse debug base")
     };
 
+    let mut queue_size = args.queue_size;
+
     println!("Using debug base 0x{:x}", base);
 
     // Make sure the CPU is powered up
@@ -74,15 +75,33 @@ fn main() {
     // Clear OS lock
     debug.write(base + 0x300, 0).expect("write oslar");
 
+    let dscr = debug.read(base + 0x88).expect("read dscr");
+    // Enable "stall" mode
+    debug.write(base + 0x88, dscr | (1 << 20)).expect("write dscr");
+
     let mut dup = 0;
     let mut empty = 0;
     let mut total = 0;
     let mut last = 0;
     let now = SystemTime::now();
     loop {
-        total += 1;
-        let result = debug.read_dcc(base, !args.nocheck).expect("read dcc");
-        if let Some(val) = result {
+        for i in 0..queue_size {
+            let result = debug.queue_read(base + 0x8c).expect("read dcc");
+            if !result {
+                println!("Limiting queue size to {}", i);
+                queue_size = i;
+                break;
+            }
+        }
+
+        for _ in 0..queue_size {
+            total += 1;
+
+            let Ok(val) = debug.finish_read() else {
+                empty += 1;
+                continue;
+            };
+
             if val == last {
                 dup += 1;
                 last = val;
@@ -101,8 +120,6 @@ fn main() {
                     total, dup, empty
                 );
             }
-        } else {
-            empty += 1;
         }
     }
 }

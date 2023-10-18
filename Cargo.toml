@@ -10,5 +10,5 @@ repository = "https://github.com/srwalter/dcc-stream"
 
 [dependencies]
 clap = {version="4.4.6", features=["derive"]}
-jtag-adi = "0.1.0"
-jtag-taps = "0.3.0"
+jtag-adi = "0.2"
+jtag-taps = "0.4"
