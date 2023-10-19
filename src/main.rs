@@ -115,9 +115,9 @@ fn main() {
             println!("{}: {:x}", elapsed.as_micros(), val);
 
             if args.stats && total % 100 == 0 {
-                println!(
-                    "STATS: total: {} duplicate: {} empty: {}",
-                    total, dup, empty
+                eprintln!(
+                    "STATS: total: {} duplicate: {} empty: {} kbps: {}",
+                    total, dup, empty, (total * 32) * 1024 / elapsed.as_micros()
                 );
             }
         }
