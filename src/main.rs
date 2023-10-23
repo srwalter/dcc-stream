@@ -66,7 +66,7 @@ fn main() {
         str::parse(&args.debug_base).expect("failed to parse debug base")
     };
 
-    let mut queue_size = args.queue_size;
+    let queue_size = args.queue_size;
 
     println!("Using debug base 0x{:x}", base);
 
@@ -77,9 +77,13 @@ fn main() {
     // Clear OS lock
     debug.write(base + 0x300, 0).expect("write oslar");
 
-    let dscr = debug.read(base + 0x88).expect("read dscr");
-    // Enable "stall" mode
-    debug.write(base + 0x88, dscr | (1 << 20)).expect("write dscr");
+    loop {
+        if let Ok(dscr) = debug.read(base + 0x88) {
+            // Enable "stall" mode
+            debug.write(base + 0x88, dscr | (1 << 20)).expect("write dscr");
+            break;
+        }
+    }
 
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
@@ -89,27 +93,14 @@ fn main() {
     }).expect("set handler");
 
     let mut dup = 0;
-    let mut empty = 0;
     let mut total = 0;
     let mut last = 0;
     let now = SystemTime::now();
     while running.load(Ordering::SeqCst) {
-        for i in 0..queue_size {
-            let result = debug.queue_read(base + 0x8c).expect("read dcc");
-            if !result {
-                println!("Limiting queue size to {}", i);
-                queue_size = i;
-                break;
-            }
-        }
+        let result = debug.read_multi(base + 0x8c, queue_size as usize, false, false).expect("read dcc");
 
-        for _ in 0..queue_size {
+        for val in result {
             total += 1;
-
-            let Ok(val) = debug.finish_read() else {
-                empty += 1;
-                continue;
-            };
 
             if val == last {
                 dup += 1;
@@ -125,8 +116,8 @@ fn main() {
 
             if args.stats && total % 100 == 0 {
                 eprintln!(
-                    "STATS: total: {} duplicate: {} empty: {} kbps: {}",
-                    total, dup, empty, (total * 32) * 1024 / elapsed.as_micros()
+                    "STATS: total: {} duplicate: {} kbps: {}",
+                    total, dup, (total * 32) * 1024 / elapsed.as_micros()
                 );
             }
         }
@@ -135,8 +126,8 @@ fn main() {
     if args.stats {
         let elapsed = now.elapsed().expect("elapsed");
         eprintln!(
-            "STATS: total: {} duplicate: {} empty: {} kbps: {}",
-            total, dup, empty, (total * 32) * 1024 / elapsed.as_micros()
+            "STATS: total: {} duplicate: {} kbps: {}",
+            total, dup, (total * 32) * 1024 / elapsed.as_micros()
         );
     }
 }
