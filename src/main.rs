@@ -1,6 +1,8 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::SystemTime;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use clap::Parser;
 
@@ -79,12 +81,19 @@ fn main() {
     // Enable "stall" mode
     debug.write(base + 0x88, dscr | (1 << 20)).expect("write dscr");
 
+    let running = Arc::new(AtomicBool::new(true));
+    let r = running.clone();
+
+    ctrlc::set_handler(move || {
+        r.store(false, Ordering::SeqCst);
+    }).expect("set handler");
+
     let mut dup = 0;
     let mut empty = 0;
     let mut total = 0;
     let mut last = 0;
     let now = SystemTime::now();
-    loop {
+    while running.load(Ordering::SeqCst) {
         for i in 0..queue_size {
             let result = debug.queue_read(base + 0x8c).expect("read dcc");
             if !result {
@@ -121,5 +130,13 @@ fn main() {
                 );
             }
         }
+    }
+
+    if args.stats {
+        let elapsed = now.elapsed().expect("elapsed");
+        eprintln!(
+            "STATS: total: {} duplicate: {} empty: {} kbps: {}",
+            total, dup, empty, (total * 32) * 1024 / elapsed.as_micros()
+        );
     }
 }
