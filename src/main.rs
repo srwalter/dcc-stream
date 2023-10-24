@@ -97,23 +97,26 @@ fn main() {
     let mut last = 0;
     let now = SystemTime::now();
     while running.load(Ordering::SeqCst) {
+        let start = now.elapsed().expect("elapsed").as_micros();
         let result = debug.read_multi(base + 0x8c, queue_size as usize, false, false).expect("read dcc");
+        let done = now.elapsed().expect("elapsed").as_micros();
 
-        for val in result {
+        for (i, val) in result.iter().enumerate() {
             total += 1;
 
-            if val == last {
+            if *val == last {
                 dup += 1;
-                last = val;
                 if args.nodups {
                     continue;
                 }
             }
-            last = val;
+            last = *val;
+
+            let delta = done - start;
+            let ts = start + delta * i as u128 / result.len() as u128;
+            println!("{}: {:x}", ts, val);
 
             let elapsed = now.elapsed().expect("elapsed");
-            println!("{}: {:x}", elapsed.as_micros(), val);
-
             if args.stats && total % 100 == 0 {
                 eprintln!(
                     "STATS: total: {} duplicate: {} kbps: {}",
